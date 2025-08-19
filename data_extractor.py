@@ -12,7 +12,9 @@ def extract_from_pdf(file_path):
     text = ""
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
     return text
 
 def extract_from_docx(file_path):
@@ -46,40 +48,83 @@ def process_text(text, extract_type):
         return text.split("\n\n")
     return [text]
 
-# --- Main program ---
+# --- Main Program ---
 def main():
     print("==== Data Extraction Tool ====")
-    source_type = input("Choose source (file/url): ").strip().lower()
-    
-    if source_type == "file":
-        file_path = input("Enter file path: ").strip()
-        ext = os.path.splitext(file_path)[-1].lower()
-        if ext == ".pdf":
-            text = extract_from_pdf(file_path)
-        elif ext == ".docx":
-            text = extract_from_docx(file_path)
-        elif ext == ".csv":
-            text = extract_from_csv(file_path)
-        elif ext in [".xls", ".xlsx"]:
-            text = extract_from_excel(file_path)
-        elif ext == ".txt":
-            text = extract_from_txt(file_path)
+
+    while True:  # outer loop (restart with new file/url)
+        source_type = input("Choose source (file/url): ").strip().lower()
+
+        if source_type == "file":
+            file_path = input("Enter file path: ").strip()
+            ext = os.path.splitext(file_path)[-1].lower()
+            if ext == ".pdf":
+                text = extract_from_pdf(file_path)
+            elif ext == ".docx":
+                text = extract_from_docx(file_path)
+            elif ext == ".csv":
+                text = extract_from_csv(file_path)
+            elif ext in [".xls", ".xlsx"]:
+                text = extract_from_excel(file_path)
+            elif ext == ".txt":
+                text = extract_from_txt(file_path)
+            else:
+                print("Unsupported file type.")
+                continue
+
+        elif source_type == "url":
+            url = input("Enter URL: ").strip()
+            text = extract_from_url(url)
         else:
-            print("Unsupported file type.")
-            return
-    elif source_type == "url":
-        url = input("Enter URL: ").strip()
-        text = extract_from_url(url)
-    else:
-        print("Invalid source.")
-        return
-    
-    extract_type = input("Extract (word/sentence/paragraph): ").strip().lower()
-    results = process_text(text, extract_type)
-    
-    # Convert to DataFrame for nice output
-    df = pd.DataFrame({"Extracted Data": results})
-    print(tabulate(df, headers="keys", tablefmt="grid"))
+            print("Invalid source.")
+            continue
+
+        while True:  # inner loop (reuse same file/url)
+            extract_type = input("Extract (word/sentence/paragraph): ").strip().lower()
+            results = process_text(text, extract_type)
+
+            df = pd.DataFrame({"Extracted Data": results})
+
+            # --- Output Choice ---
+            print("\nOutput Options:")
+            print("1. Display in terminal")
+            print("2. Save to CSV")
+            print("3. Save to Excel")
+            choice = input("Choose (1/2/3): ").strip()
+
+            if choice == "1":
+                print(tabulate(df, headers="keys", tablefmt="grid"))
+            elif choice == "2":
+                out_name = input("Enter CSV file name (without .csv): ").strip() + ".csv"
+                df.to_csv(out_name, index=False)
+                print(f"✅ Results saved to {out_name}")
+            elif choice == "3":
+                out_name = input("Enter Excel file name (without .xlsx): ").strip() + ".xlsx"
+                df.to_excel(out_name, index=False)
+                print(f"✅ Results saved to {out_name}")
+            else:
+                print("Invalid choice, displaying in terminal by default.")
+                print(tabulate(df, headers="keys", tablefmt="grid"))
+
+            # --- Ask for next action ---
+            next_action = input(
+                "\nWould you like to:\n"
+                "1. Extract different data from the same file/url\n"
+                "2. Upload a new file/url\n"
+                "3. Exit\n"
+                "Choose (1/2/3): "
+            ).strip()
+
+            if next_action == "1":
+                continue  # reuse same file/url
+            elif next_action == "2":
+                break  # go back to outer loop
+            elif next_action == "3":
+                print("👋 Exiting program. Goodbye!")
+                return
+            else:
+                print("Invalid choice. Exiting.")
+                return
 
 if __name__ == "__main__":
     main()
