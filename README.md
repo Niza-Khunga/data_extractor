@@ -67,23 +67,24 @@ project_root/
 
 Windows (PowerShell):
 
+```
 .\venv\Scripts\Activate.ps1
-
+```
 
 Windows (Command Prompt):
-
+```
 .\venv\Scripts\activate.bat
-
+```
 
 Linux/macOS:
-
+```
 source venv/bin/activate
-
+```
 
 Install required Python packages
-
+```
 pip install pandas beautifulsoup4 requests python-docx pdfplumber tabulate openpyxl lxml
-
+```
 
 **Tip:** Always activate the virtual environment before running the program to ensure dependencies are loaded correctly.
 
@@ -110,9 +111,9 @@ lxml → HTML/XML parsing
 Place files to extract in the input/ folder (optional if using full paths).
 
 **Run the program:**
-
+```
 python data_extractor.py
-
+```
 
 **Follow the terminal prompts:**
 
