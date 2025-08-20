@@ -8,9 +8,9 @@ import openpyxl
 from tabulate import tabulate
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
-# --- Extractors ---
+# --------------------- Extractor Functions --------------------- #
 def extract_from_pdf(file_path):
     text = ""
     with pdfplumber.open(file_path) as pdf:
@@ -37,186 +37,164 @@ def extract_from_txt(file_path):
         return f.read()
 
 def extract_from_url(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "html.parser")
-    return soup.get_text()
+    try:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "html.parser")
+        return soup.get_text()
+    except:
+        return ""
 
-# --- Process text depending on choice ---
+# --------------------- Text Processing --------------------- #
 def process_text(text, extract_type):
     if extract_type == "word":
-        return text.split()
+        items = text.split()
     elif extract_type == "sentence":
-        return text.split(". ")
+        items = text.split(". ")
     elif extract_type == "paragraph":
-        return text.split("\n\n")
-    return [text]
+        items = text.split("\n\n")
+    else:
+        items = [text]
 
-# --- GUI Application ---
+    # Build structured output
+    structured = []
+    for idx, item in enumerate(items, start=1):
+        structured.append({
+            "ID": idx,
+            "Extracted Data": item.strip(),
+            "Type": extract_type,
+            "Length": len(item),
+            "Preview": item[:50] + ("..." if len(item) > 50 else "")
+        })
+    return structured
+
+# --------------------- GUI --------------------- #
 class DataExtractorGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Data Extraction Tool")
-        self.root.geometry("900x600")
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Data Extraction Tool GUI")
+        self.master.geometry("600x400")
 
+        # Ensure input and output folders exist
         self.input_folder = "input"
         self.output_folder = "output"
         os.makedirs(self.input_folder, exist_ok=True)
         os.makedirs(self.output_folder, exist_ok=True)
 
-        self.source_type = tk.StringVar(value="file")
-        self.file_path = tk.StringVar()
-        self.url = tk.StringVar()
-        self.extract_type = tk.StringVar(value="word")
-        self.results = None
+        # Initialize variables
+        self.file_path = ""
+        self.source_type = ""
+        self.extract_type = ""
+        self.text = ""
+        self.results = []
 
-        self.create_source_frame()
+        # GUI Elements
+        tk.Label(master, text="Data Extraction Tool GUI", font=("Arial", 16)).pack(pady=10)
+        tk.Button(master, text="Select File", width=20, command=self.select_file).pack(pady=5)
+        tk.Button(master, text="Enter URL", width=20, command=self.enter_url).pack(pady=5)
+        tk.Button(master, text="Choose Extraction Type", width=25, command=self.choose_extract_type).pack(pady=5)
+        tk.Button(master, text="Preview & Save Results", width=25, command=self.preview_and_save).pack(pady=5)
+        tk.Button(master, text="Exit", width=15, command=master.quit).pack(pady=20)
 
-    # --- Stage 1: Source Selection ---
-    def create_source_frame(self):
-        self.clear_frame()
-        frame = tk.Frame(self.root)
-        frame.pack(pady=20)
-
-        tk.Label(frame, text="Select Source:", font=("Arial", 14)).pack(anchor="w")
-
-        tk.Radiobutton(frame, text="File", variable=self.source_type, value="file").pack(anchor="w")
-        tk.Radiobutton(frame, text="URL", variable=self.source_type, value="url").pack(anchor="w")
-
-        tk.Button(frame, text="Select File", command=self.select_file).pack(pady=5)
-        tk.Label(frame, text="Or enter URL:").pack(anchor="w")
-        tk.Entry(frame, textvariable=self.url, width=50).pack(pady=5)
-
-        tk.Button(frame, text="Next", command=self.confirm_source).pack(pady=10)
-        tk.Button(frame, text="Exit", command=self.root.quit).pack(pady=5)
-
+    # --------------------- GUI Actions --------------------- #
     def select_file(self):
-        file = filedialog.askopenfilename(initialdir=self.input_folder)
-        if file:
-            self.file_path.set(file)
-
-    def confirm_source(self):
-        if self.source_type.get() == "file":
-            if not self.file_path.get() or not os.path.exists(self.file_path.get()):
-                messagebox.showerror("Error", "Please select a valid file.")
+        # Ask user to browse or select from input folder
+        option = messagebox.askyesno("Select File", "Do you want to select from the input folder?\nYes = input folder\nNo = browse file path")
+        if option:
+            # List files in input folder
+            files = os.listdir(self.input_folder)
+            if not files:
+                messagebox.showwarning("Input Folder Empty", "No files in input folder. Please browse to select a file.")
+                self.browse_file()
+                return
+            # Ask user to type file name
+            file_name = simpledialog.askstring("Input File Name", f"Files available:\n{', '.join(files)}\n\nEnter the file name exactly:")
+            if not file_name:
+                return
+            file_path = os.path.join(self.input_folder, file_name)
+            if not os.path.exists(file_path):
+                messagebox.showerror("File Not Found", "Invalid file name. Please try again.")
                 return
         else:
-            if not self.url.get().startswith("http"):
-                messagebox.showerror("Error", "Please enter a valid URL.")
-                return
-        self.create_extract_frame()
-
-    # --- Stage 2: Extraction Type ---
-    def create_extract_frame(self):
-        self.clear_frame()
-        frame = tk.Frame(self.root)
-        frame.pack(pady=20)
-
-        tk.Label(frame, text="Select Extraction Type:", font=("Arial", 14)).pack(anchor="w")
-        options = ["word", "sentence", "paragraph"]
-        ttk.Combobox(frame, textvariable=self.extract_type, values=options, state="readonly").pack(pady=10)
-
-        tk.Button(frame, text="Confirm", command=self.confirm_extraction).pack(pady=5)
-        tk.Button(frame, text="Return", command=self.create_source_frame).pack(pady=5)
-        tk.Button(frame, text="Restart", command=self.create_source_frame).pack(pady=5)
-        tk.Button(frame, text="Exit", command=self.root.quit).pack(pady=5)
-
-    # --- Stage 3: Confirmation ---
-    def confirm_extraction(self):
-        msg = f"Please confirm your selections:\n\n"
-        msg += f"Source Type: {self.source_type.get()}\n"
-        if self.source_type.get() == "file":
-            msg += f"File: {os.path.basename(self.file_path.get())}\n"
-        else:
-            msg += f"URL: {self.url.get()}\n"
-        msg += f"Extraction Type: {self.extract_type.get()}\n\n"
-        msg += "Proceed?"
-
-        response = messagebox.askyesnocancel("Confirm Selections", msg)
-        if response is True:
-            self.perform_extraction()
-        elif response is False:
-            self.create_extract_frame()
-        else:
-            self.create_source_frame()
-
-    # --- Stage 4: Perform Extraction ---
-    def perform_extraction(self):
-        try:
-            if self.source_type.get() == "file":
-                ext = os.path.splitext(self.file_path.get())[-1].lower()
-                if ext == ".pdf":
-                    text = extract_from_pdf(self.file_path.get())
-                elif ext == ".docx":
-                    text = extract_from_docx(self.file_path.get())
-                elif ext == ".csv":
-                    text = extract_from_csv(self.file_path.get())
-                elif ext in [".xls", ".xlsx"]:
-                    text = extract_from_excel(self.file_path.get())
-                elif ext == ".txt":
-                    text = extract_from_txt(self.file_path.get())
-                else:
-                    messagebox.showerror("Error", "Unsupported file type.")
-                    return
-            else:
-                text = extract_from_url(self.url.get())
-        except Exception as e:
-            messagebox.showerror("Error", f"Extraction failed: {str(e)}")
+            self.browse_file()
             return
 
-        self.results = process_text(text, self.extract_type.get())
-        self.create_output_frame()
+        self.file_path = file_path
+        self.source_type = "file"
+        self.load_text()
+        messagebox.showinfo("File Loaded", f"File loaded successfully:\n{os.path.basename(self.file_path)}")
 
-    # --- Stage 5: Output Options ---
-    def create_output_frame(self):
-        self.clear_frame()
-        frame = tk.Frame(self.root)
-        frame.pack(pady=20)
+    def browse_file(self):
+        file_path = filedialog.askopenfilename(title="Select file")
+        if not file_path:
+            return
+        self.file_path = file_path
+        self.source_type = "file"
+        self.load_text()
+        messagebox.showinfo("File Loaded", f"File loaded successfully:\n{os.path.basename(self.file_path)}")
 
-        tk.Label(frame, text="Select Output Option:", font=("Arial", 14)).pack(anchor="w")
+    def enter_url(self):
+        url = simpledialog.askstring("Enter URL", "Please enter the URL:")
+        if not url:
+            return
+        self.text = extract_from_url(url)
+        if not self.text.strip():
+            messagebox.showerror("Error", "Failed to fetch data from URL. Please check the URL and try again.")
+            return
+        self.source_type = "url"
+        messagebox.showinfo("URL Loaded", "Text extracted from URL successfully.")
 
-        tk.Button(frame, text="Display in GUI Table", command=self.display_table).pack(pady=5)
-        tk.Button(frame, text="Save to CSV", command=lambda: self.save_results("csv")).pack(pady=5)
-        tk.Button(frame, text="Save to Excel", command=lambda: self.save_results("excel")).pack(pady=5)
-        tk.Button(frame, text="Return", command=self.create_extract_frame).pack(pady=5)
-        tk.Button(frame, text="Restart", command=self.create_source_frame).pack(pady=5)
-        tk.Button(frame, text="Exit", command=self.root.quit).pack(pady=5)
-
-    def display_table(self):
-        self.clear_frame()
-        frame = tk.Frame(self.root)
-        frame.pack(fill="both", expand=True)
-
-        columns = ("Data",)
-        tree = ttk.Treeview(frame, columns=columns, show="headings")
-        tree.heading("Data", text="Extracted Data")
-
-        for item in self.results:
-            tree.insert("", "end", values=(item,))
-
-        tree.pack(fill="both", expand=True)
-
-        tk.Button(frame, text="Return", command=self.create_output_frame).pack(pady=5)
-        tk.Button(frame, text="Restart", command=self.create_source_frame).pack(pady=5)
-        tk.Button(frame, text="Exit", command=self.root.quit).pack(pady=5)
-
-    def save_results(self, file_type):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        if file_type == "csv":
-            filename = f"results_{timestamp}.csv"
-            df = pd.DataFrame({"Extracted Data": self.results})
-            df.to_csv(os.path.join(self.output_folder, filename), index=False)
+    def choose_extract_type(self):
+        extract_type = simpledialog.askstring("Extraction Type", "Choose extraction type (word/sentence/paragraph):")
+        if extract_type and extract_type.lower() in ["word", "sentence", "paragraph"]:
+            self.extract_type = extract_type.lower()
+            messagebox.showinfo("Extraction Type Selected", f"Extraction type: {self.extract_type}")
         else:
-            filename = f"results_{timestamp}.xlsx"
-            df = pd.DataFrame({"Extracted Data": self.results})
-            df.to_excel(os.path.join(self.output_folder, filename), index=False)
+            messagebox.showerror("Invalid Type", "Please choose a valid extraction type.")
 
-        messagebox.showinfo("Saved", f"Results saved to {filename}")
+    def load_text(self):
+        ext = os.path.splitext(self.file_path)[-1].lower()
+        if ext == ".pdf":
+            self.text = extract_from_pdf(self.file_path)
+        elif ext == ".docx":
+            self.text = extract_from_docx(self.file_path)
+        elif ext == ".csv":
+            self.text = extract_from_csv(self.file_path)
+        elif ext in [".xls", ".xlsx"]:
+            self.text = extract_from_excel(self.file_path)
+        elif ext == ".txt":
+            self.text = extract_from_txt(self.file_path)
+        else:
+            messagebox.showerror("Unsupported File", "Unsupported file type.")
+            self.text = ""
 
-    def clear_frame(self):
-        for widget in self.root.winfo_children():
-            widget.destroy()
+    def preview_and_save(self):
+        if not self.text.strip() or not self.extract_type:
+            messagebox.showerror("Missing Data", "Please select a file/URL and extraction type first.")
+            return
 
-# --- Main ---
+        self.results = process_text(self.text, self.extract_type)
+        df = pd.DataFrame(self.results)
+
+        # Preview first 10 rows
+        preview_window = tk.Toplevel(self.master)
+        preview_window.title("Preview Results")
+        tk.Label(preview_window, text="Preview of Extracted Data (first 10 rows)").pack(pady=5)
+        preview_text = tk.Text(preview_window, height=20, width=100)
+        preview_text.pack(padx=10, pady=10)
+        preview_text.insert(tk.END, tabulate(df.head(10), headers="keys", tablefmt="grid"))
+
+        # Save file
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_name = simpledialog.askstring("Save File", f"Enter filename (without extension):\nTimestamp will be added automatically")
+        if not save_name:
+            save_name = "results"
+        csv_path = os.path.join(self.output_folder, f"{save_name}_{timestamp}.csv")
+        excel_path = os.path.join(self.output_folder, f"{save_name}_{timestamp}.xlsx")
+        df.to_csv(csv_path, index=False)
+        df.to_excel(excel_path, index=False)
+        messagebox.showinfo("Saved", f"Results saved successfully:\nCSV: {csv_path}\nExcel: {excel_path}")
+
+# --------------------- Run GUI --------------------- #
 if __name__ == "__main__":
     root = tk.Tk()
     app = DataExtractorGUI(root)
