@@ -4,21 +4,19 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from docx import Document
 import pdfplumber
-import openpyxl
 from tabulate import tabulate
 from datetime import datetime
+import re
 
-
-# --- Ensure input and output folders exist ---
+# --- Set up input/output folders ---
 INPUT_FOLDER = "input"
 OUTPUT_FOLDER = "output"
-
 os.makedirs(INPUT_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-
-# --- Extractors ---
+# --- Extractors for different file types ---
 def extract_from_pdf(file_path):
+    """Extract all text from a PDF file."""
     text = ""
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
@@ -27,61 +25,75 @@ def extract_from_pdf(file_path):
                 text += page_text + "\n"
     return text
 
-
 def extract_from_docx(file_path):
+    """Extract all text from a DOCX file."""
     doc = Document(file_path)
     return "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
 
-
 def extract_from_csv(file_path):
+    """Convert CSV content to string."""
     df = pd.read_csv(file_path)
     return df.to_string()
 
-
 def extract_from_excel(file_path):
+    """Convert Excel content to string."""
     df = pd.read_excel(file_path)
     return df.to_string()
 
-
 def extract_from_txt(file_path):
+    """Read text file content."""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
-
 def extract_from_url(url):
+    """Extract visible text from a web page."""
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
     return soup.get_text()
 
-
-# --- Process text depending on choice ---
+# --- Process text based on extraction type ---
 def process_text(text, extract_type):
+    """
+    Splits text based on extraction type:
+    - word: splits by whitespace, tracks sentence index
+    - sentence: splits by punctuation
+    - paragraph: splits by double newline
+    """
     if extract_type == "word":
-        return text.split()
+        sentences = re.split(r'(?<=[.!?]) +', text)
+        words = []
+        word_sentence_idx = []
+        for idx, sentence in enumerate(sentences, 1):
+            sentence_words = sentence.split()
+            words.extend(sentence_words)
+            word_sentence_idx.extend([idx]*len(sentence_words))
+        return words, word_sentence_idx
     elif extract_type == "sentence":
-        return text.split(". ")
+        sentences = re.split(r'(?<=[.!?]) +', text)
+        return sentences, None
     elif extract_type == "paragraph":
-        return text.split("\n\n")
-    return [text]
+        paragraphs = text.split("\n\n")
+        paragraphs = [p for p in paragraphs if p.strip()]
+        return paragraphs, None
+    return [text], None
 
-
-# --- Helper: timestamped filename based on input file (shorter format) ---
+# --- Helper: generate timestamped filenames ---
 def timestamped_filename(input_file_name, extension):
-    base_name = os.path.splitext(os.path.basename(input_file_name))[0]  # Remove path & extension
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # Compact format
+    """Create a unique timestamped filename to avoid overwriting."""
+    base_name = os.path.splitext(os.path.basename(input_file_name))[0]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{base_name}_results_{timestamp}{extension}"
 
-
-
-# --- Main Program ---
+# --- Main program ---
 def main():
     print("==== Data Extraction Tool ====")
 
-    while True:  # outer loop (restart with new file/url)
+    while True:  # Outer loop for new file/url
         source_type = input("Choose source (file/url): ").strip().lower()
 
+        # --- File selection options ---
         if source_type == "file":
-            print("\nDo you want to:")
+            print("\nFile selection options:")
             print("1. Enter full file path")
             print("2. Enter file name in 'input/' folder")
             print("3. Pick from list of files in 'input/'")
@@ -89,11 +101,9 @@ def main():
 
             if file_mode == "1":
                 file_path = input("Enter full file path: ").strip()
-
             elif file_mode == "2":
                 filename = input("Enter file name (e.g., document.pdf): ").strip()
                 file_path = os.path.join(INPUT_FOLDER, filename)
-
             elif file_mode == "3":
                 files = os.listdir(INPUT_FOLDER)
                 if not files:
@@ -107,7 +117,6 @@ def main():
                     print("❌ Invalid choice.")
                     continue
                 file_path = os.path.join(INPUT_FOLDER, files[int(choice) - 1])
-
             else:
                 print("Invalid choice, try again.")
                 continue
@@ -131,22 +140,40 @@ def main():
                 print("Unsupported file type.")
                 continue
 
+        # --- URL extraction ---
         elif source_type == "url":
             url = input("Enter URL: ").strip()
             text = extract_from_url(url)
-            file_path = "webpage"  # placeholder for naming outputs
-
+            file_path = "webpage"
         else:
             print("Invalid source.")
             continue
 
-        while True:  # inner loop (reuse same file/url)
+        while True:  # Inner loop for repeated extraction on same file/url
             extract_type = input("Extract (word/sentence/paragraph): ").strip().lower()
-            results = process_text(text, extract_type)
+            results, word_sentence_idx = process_text(text, extract_type)
 
-            df = pd.DataFrame({"Extracted Data": results})
+            # --- Build DataFrame with extended attributes ---
+            data = []
+            for i, content in enumerate(results, 1):
+                preview = " ".join(content.split()[:10])  # first 10 words
+                row = {
+                    "Source": os.path.basename(file_path),
+                    "Type": extract_type,
+                    "Index": i,
+                    "Content": content,
+                    "Word Count": len(content.split()),
+                    "Character Length": len(content),
+                    "Preview": preview
+                }
+                if extract_type == "word":
+                    row["Position"] = i
+                    row["Sentence Index"] = word_sentence_idx[i-1]
+                data.append(row)
 
-            # --- Output Choice ---
+            df = pd.DataFrame(data)
+
+            # --- Output options ---
             print("\nOutput Options:")
             print("1. Display in terminal")
             print("2. Save to CSV")
@@ -169,7 +196,7 @@ def main():
                 print("Invalid choice, displaying in terminal by default.")
                 print(tabulate(df, headers="keys", tablefmt="grid"))
 
-            # --- Ask for next action ---
+            # --- Next action ---
             next_action = input(
                 "\nWould you like to:\n"
                 "1. Extract different data from the same file/url\n"
@@ -179,16 +206,15 @@ def main():
             ).strip()
 
             if next_action == "1":
-                continue  # reuse same file/url
+                continue
             elif next_action == "2":
-                break  # go back to outer loop
+                break
             elif next_action == "3":
                 print("👋 Exiting program. Goodbye!")
                 return
             else:
                 print("Invalid choice. Exiting.")
                 return
-
 
 if __name__ == "__main__":
     main()
