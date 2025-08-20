@@ -4,7 +4,6 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from docx import Document
 import pdfplumber
-import openpyxl
 from tabulate import tabulate
 from datetime import datetime
 import tkinter as tk
@@ -72,7 +71,7 @@ class DataExtractorGUI:
     def __init__(self, master):
         self.master = master
         self.master.title("Data Extraction Tool GUI")
-        self.master.geometry("600x400")
+        self.master.geometry("650x450")
 
         # Ensure input and output folders exist
         self.input_folder = "input"
@@ -89,68 +88,128 @@ class DataExtractorGUI:
 
         # GUI Elements
         tk.Label(master, text="Data Extraction Tool GUI", font=("Arial", 16)).pack(pady=10)
-        tk.Button(master, text="Select File", width=20, command=self.select_file).pack(pady=5)
-        tk.Button(master, text="Enter URL", width=20, command=self.enter_url).pack(pady=5)
-        tk.Button(master, text="Choose Extraction Type", width=25, command=self.choose_extract_type).pack(pady=5)
-        tk.Button(master, text="Preview & Save Results", width=25, command=self.preview_and_save).pack(pady=5)
+        tk.Button(master, text="Start Extraction", width=25, command=self.start_extraction).pack(pady=10)
         tk.Button(master, text="Exit", width=15, command=master.quit).pack(pady=20)
 
-    # --------------------- GUI Actions --------------------- #
+    # --------------------- GUI Navigation --------------------- #
+    def start_extraction(self):
+        while True:
+            # --------- Source Selection Stage --------- #
+            choice = messagebox.askquestion("Source", "Do you want to extract from a file?\nYes = file\nNo = URL")
+            if choice == "yes":
+                if not self.select_file():
+                    return  # Exit if user cancels
+            else:
+                if not self.enter_url():
+                    return  # Exit if user cancels
+
+            # --------- Extraction Type Stage --------- #
+            if not self.choose_extract_type():
+                continue  # restart extraction type if canceled/invalid
+
+            # --------- Confirmation Stage --------- #
+            confirm = self.confirm_selections()
+            if confirm == "exit":
+                return
+            elif confirm == "restart":
+                continue
+            elif confirm == "modify":
+                continue  # allow redoing stages
+
+            # --------- Processing & Preview --------- #
+            self.results = process_text(self.text, self.extract_type)
+            df = pd.DataFrame(self.results)
+            if not self.preview_results(df):
+                return  # exit preview canceled
+
+            # --------- Save Stage --------- #
+            self.save_results(df)
+            # After saving, ask user if they want to restart or exit
+            final_choice = messagebox.askquestion("Next Action", "Do you want to extract another file or URL?")
+            if final_choice == "yes":
+                continue  # restart entire process
+            else:
+                messagebox.showinfo("Exit", "Exiting program. Goodbye!")
+                return
+
+    # --------------------- File/URL Selection --------------------- #
     def select_file(self):
-        # Ask user to browse or select from input folder
-        option = messagebox.askyesno("Select File", "Do you want to select from the input folder?\nYes = input folder\nNo = browse file path")
-        if option:
-            # List files in input folder
-            files = os.listdir(self.input_folder)
-            if not files:
-                messagebox.showwarning("Input Folder Empty", "No files in input folder. Please browse to select a file.")
-                self.browse_file()
-                return
-            # Ask user to type file name
-            file_name = simpledialog.askstring("Input File Name", f"Files available:\n{', '.join(files)}\n\nEnter the file name exactly:")
-            if not file_name:
-                return
-            file_path = os.path.join(self.input_folder, file_name)
-            if not os.path.exists(file_path):
-                messagebox.showerror("File Not Found", "Invalid file name. Please try again.")
-                return
-        else:
-            self.browse_file()
-            return
+        while True:
+            option = messagebox.askyesno("Select File", "Select from input folder?\nYes=input folder, No=browse")
+            if option:
+                files = os.listdir(self.input_folder)
+                if not files:
+                    messagebox.showwarning("Empty Folder", "Input folder empty. Browsing instead.")
+                    file_path = filedialog.askopenfilename(title="Select file")
+                else:
+                    file_name = simpledialog.askstring("Input File Name", f"Files available:\n{', '.join(files)}\nEnter file name exactly:")
+                    if file_name is None:
+                        return False
+                    file_path = os.path.join(self.input_folder, file_name)
+                    if not os.path.exists(file_path):
+                        messagebox.showerror("Error", "Invalid file name. Try again.")
+                        continue
+            else:
+                file_path = filedialog.askopenfilename(title="Select file")
+                if not file_path:
+                    return False
 
-        self.file_path = file_path
-        self.source_type = "file"
-        self.load_text()
-        messagebox.showinfo("File Loaded", f"File loaded successfully:\n{os.path.basename(self.file_path)}")
-
-    def browse_file(self):
-        file_path = filedialog.askopenfilename(title="Select file")
-        if not file_path:
-            return
-        self.file_path = file_path
-        self.source_type = "file"
-        self.load_text()
-        messagebox.showinfo("File Loaded", f"File loaded successfully:\n{os.path.basename(self.file_path)}")
+            self.file_path = file_path
+            self.source_type = "file"
+            self.load_text()
+            if not self.text.strip():
+                messagebox.showerror("Error", "Failed to load file. Try again.")
+                continue
+            messagebox.showinfo("Loaded", f"File loaded: {os.path.basename(self.file_path)}")
+            return True
 
     def enter_url(self):
-        url = simpledialog.askstring("Enter URL", "Please enter the URL:")
-        if not url:
-            return
-        self.text = extract_from_url(url)
-        if not self.text.strip():
-            messagebox.showerror("Error", "Failed to fetch data from URL. Please check the URL and try again.")
-            return
-        self.source_type = "url"
-        messagebox.showinfo("URL Loaded", "Text extracted from URL successfully.")
+        while True:
+            url = simpledialog.askstring("Enter URL", "Enter the URL:")
+            if url is None:
+                return False
+            self.text = extract_from_url(url)
+            if not self.text.strip():
+                retry = messagebox.askretrycancel("Error", "Failed to fetch data from URL. Retry?")
+                if retry:
+                    continue
+                else:
+                    return False
+            self.source_type = "url"
+            messagebox.showinfo("Loaded", "Text extracted from URL successfully.")
+            return True
 
+    # --------------------- Extraction Type --------------------- #
     def choose_extract_type(self):
-        extract_type = simpledialog.askstring("Extraction Type", "Choose extraction type (word/sentence/paragraph):")
-        if extract_type and extract_type.lower() in ["word", "sentence", "paragraph"]:
-            self.extract_type = extract_type.lower()
-            messagebox.showinfo("Extraction Type Selected", f"Extraction type: {self.extract_type}")
-        else:
-            messagebox.showerror("Invalid Type", "Please choose a valid extraction type.")
+        while True:
+            extract_type = simpledialog.askstring("Extraction Type", "Choose extraction type (word/sentence/paragraph):")
+            if extract_type is None:
+                return False
+            extract_type = extract_type.lower()
+            if extract_type in ["word", "sentence", "paragraph"]:
+                self.extract_type = extract_type
+                return True
+            else:
+                messagebox.showerror("Invalid Type", "Choose a valid extraction type.")
 
+    # --------------------- Confirmation --------------------- #
+    def confirm_selections(self):
+        while True:
+            msg = f"Confirm selections:\nSource: {self.source_type}\nExtraction Type: {self.extract_type}\nFile/URL: {os.path.basename(self.file_path) if self.file_path else 'URL'}"
+            choice = simpledialog.askstring("Confirm", f"{msg}\n\nOptions: yes=proceed, no=modify, restart=restart, exit=exit")
+            if choice is None:
+                continue
+            choice = choice.lower()
+            if choice in ["yes", "y"]:
+                return "proceed"
+            elif choice in ["no", "modify"]:
+                return "modify"
+            elif choice == "restart":
+                return "restart"
+            elif choice == "exit":
+                return "exit"
+
+    # --------------------- Load Text --------------------- #
     def load_text(self):
         ext = os.path.splitext(self.file_path)[-1].lower()
         if ext == ".pdf":
@@ -167,25 +226,20 @@ class DataExtractorGUI:
             messagebox.showerror("Unsupported File", "Unsupported file type.")
             self.text = ""
 
-    def preview_and_save(self):
-        if not self.text.strip() or not self.extract_type:
-            messagebox.showerror("Missing Data", "Please select a file/URL and extraction type first.")
-            return
-
-        self.results = process_text(self.text, self.extract_type)
-        df = pd.DataFrame(self.results)
-
-        # Preview first 10 rows
+    # --------------------- Preview --------------------- #
+    def preview_results(self, df):
         preview_window = tk.Toplevel(self.master)
         preview_window.title("Preview Results")
         tk.Label(preview_window, text="Preview of Extracted Data (first 10 rows)").pack(pady=5)
         preview_text = tk.Text(preview_window, height=20, width=100)
         preview_text.pack(padx=10, pady=10)
         preview_text.insert(tk.END, tabulate(df.head(10), headers="keys", tablefmt="grid"))
+        return True
 
-        # Save file
+    # --------------------- Save --------------------- #
+    def save_results(self, df):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_name = simpledialog.askstring("Save File", f"Enter filename (without extension):\nTimestamp will be added automatically")
+        save_name = simpledialog.askstring("Save File", "Enter filename (without extension):")
         if not save_name:
             save_name = "results"
         csv_path = os.path.join(self.output_folder, f"{save_name}_{timestamp}.csv")
