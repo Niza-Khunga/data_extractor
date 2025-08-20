@@ -148,4 +148,48 @@ Invalid inputs will prompt re-entry or navigation commands.
 
 Structured output includes additional attributes for easier analysis and data processing.
 
+## Example Usage
+
+### Terminal Session
+
+
+==== Data Extraction Tool ====
+Choose source (file/url) or type 'exit'/'redo'/'restart': file
+
+File selection options:
+1. Enter full file path
+2. Enter file name in 'input/' folder
+3. Pick from list of files in 'input/' folder
+Choose (1/2/3) or 'exit'/'redo'/'restart': 3
+
+Available files in 'input/':
+1. sample_docx.docx
+2. sample_pdf.pdf
+Choose a file number or 'exit'/'redo'/'restart': 1
+
+Extract (word/sentence/paragraph) or 'exit'/'return'/'redo'/'restart': paragraph
+
+✅ Current selections:
+Source Type: file
+File: sample_docx.docx
+Extraction Type: paragraph
+
+Confirm selections? (yes/no/exit/restart): yes
+
+Output Options:
+1. Display in terminal
+2. Save to CSV
+3. Save to Excel
+Choose (1/2/3) or 'exit'/'return'/'redo'/'restart': 3
+
+✅ Results saved to output/sample_docx_results_20250820_153245.xlsx
+
+Next Actions:
+1. Extract different data from the same file/url
+2. Upload a new file/url
+3. Exit
+Choose (1/2/3) or 'restart': 3
+
+👋 Exiting program. Goodbye!
+
 
