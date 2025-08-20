@@ -7,7 +7,7 @@ import pdfplumber
 from tabulate import tabulate
 from datetime import datetime
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 # --------------------- Extractor Functions --------------------- #
 def extract_from_pdf(file_path):
@@ -54,7 +54,6 @@ def process_text(text, extract_type):
     else:
         items = [text]
 
-    # Build structured output
     structured = []
     for idx, item in enumerate(items, start=1):
         structured.append({
@@ -71,7 +70,7 @@ class DataExtractorGUI:
     def __init__(self, master):
         self.master = master
         self.master.title("Data Extraction Tool GUI")
-        self.master.geometry("650x450")
+        self.master.geometry("800x600")
 
         # Ensure input and output folders exist
         self.input_folder = "input"
@@ -116,15 +115,13 @@ class DataExtractorGUI:
             elif confirm == "modify":
                 continue  # allow redoing stages
 
-            # --------- Processing & Preview --------- #
+            # --------- Processing & Full Table View --------- #
             self.results = process_text(self.text, self.extract_type)
             df = pd.DataFrame(self.results)
-            if not self.preview_results(df):
-                return  # exit preview canceled
+            self.show_full_table(df)
 
             # --------- Save Stage --------- #
             self.save_results(df)
-            # After saving, ask user if they want to restart or exit
             final_choice = messagebox.askquestion("Next Action", "Do you want to extract another file or URL?")
             if final_choice == "yes":
                 continue  # restart entire process
@@ -226,15 +223,33 @@ class DataExtractorGUI:
             messagebox.showerror("Unsupported File", "Unsupported file type.")
             self.text = ""
 
-    # --------------------- Preview --------------------- #
-    def preview_results(self, df):
-        preview_window = tk.Toplevel(self.master)
-        preview_window.title("Preview Results")
-        tk.Label(preview_window, text="Preview of Extracted Data (first 10 rows)").pack(pady=5)
-        preview_text = tk.Text(preview_window, height=20, width=100)
-        preview_text.pack(padx=10, pady=10)
-        preview_text.insert(tk.END, tabulate(df.head(10), headers="keys", tablefmt="grid"))
-        return True
+    # --------------------- Full Table View --------------------- #
+    def show_full_table(self, df):
+        table_window = tk.Toplevel(self.master)
+        table_window.title("Full Extracted Data")
+
+        # Create Treeview
+        tree_frame = tk.Frame(table_window)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        tree_scroll_y = tk.Scrollbar(tree_frame)
+        tree_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        tree_scroll_x = tk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
+        tree_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        tree = ttk.Treeview(tree_frame, columns=list(df.columns), show="headings",
+                            yscrollcommand=tree_scroll_y.set, xscrollcommand=tree_scroll_x.set)
+        for col in df.columns:
+            tree.heading(col, text=col)
+            tree.column(col, width=150, anchor=tk.W)
+
+        # Insert data
+        for _, row in df.iterrows():
+            tree.insert("", tk.END, values=list(row))
+
+        tree.pack(fill=tk.BOTH, expand=True)
+        tree_scroll_y.config(command=tree.yview)
+        tree_scroll_x.config(command=tree.xview)
 
     # --------------------- Save --------------------- #
     def save_results(self, df):
